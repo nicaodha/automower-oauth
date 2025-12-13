@@ -66,7 +66,7 @@ async function refreshToken(req) {
   if (!req.session.refresh_token) return;
   try {
     const response = await axios.post(
-      "https://api.authentication.husqvarnagroup.dev/v1/oauth2/token",
+      "https://api.authentication.husqvarnagroup.cloud/v1/oauth2/token",
       null,
       {
         params: {
