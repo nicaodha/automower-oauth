@@ -32,22 +32,22 @@ app.get("/callback", async (req, res) => {
   if (!code) return res.send("No code received");
 
   try {
-    const response = await axios.post(
-      "https://api.authentication.husqvarnagroup.cloud/v1/oauth2/token",
-      null,
-      {
-        params: {
-          grant_type: "authorization_code",
-          code,
-          redirect_uri: REDIRECT_URI,
-          client_id: CLIENT_ID,
-          client_secret: CLIENT_SECRET,
-        },
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-      }
-    );
+   const response = await axios.post(
+  "https://api.authentication.husqvarnagroup.cloud/v1/oauth2/token",
+  null,
+  {
+    params: {
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: REDIRECT_URI,
+      client_id: CLIENT_ID,
+      client_secret: CLIENT_SECRET,
+    },
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+  }
+);
 
     req.session.access_token = response.data.access_token;
     req.session.refresh_token = response.data.refresh_token;
