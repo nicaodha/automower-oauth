@@ -33,7 +33,7 @@ app.get("/callback", async (req, res) => {
 
   try {
     const response = await axios.post(
-      "https://api.authentication.husqvarnagroup.dev/v1/oauth2/token",
+      "https://api.authentication.husqvarnagroup.cloud/v1/oauth2/token",
       null,
       {
         params: {
