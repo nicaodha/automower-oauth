@@ -53,8 +53,13 @@ app.get("/callback", async (req, res) => {
     req.session.refresh_token = response.data.refresh_token;
     res.redirect("/dashboard");
   } catch (err) {
-    res.send(`<p>Error fetching token: ${err.message}</p>`);
-  }
+  const husqvarnaError = err.response?.data || err.message;
+  console.error("Token exchange error:", husqvarnaError);
+  res.send(`
+    <h3>Error fetching token</h3>
+    <pre>${JSON.stringify(husqvarnaError, null, 2)}</pre>
+  `);
+}
 });
 
 async function refreshToken(req) {
