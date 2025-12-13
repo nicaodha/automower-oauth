@@ -21,10 +21,10 @@ app.get("/", (req, res) => {
 });
 
 app.get("/login", (req, res) => {
-  const authUrl = `https://api.authentication.husqvarnagroup.dev/v1/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(
-    REDIRECT_URI
-  )}&response_type=code&scope=AM.CLOUD`;
-  res.redirect(authUrl);
+ const authUrl = `https://api.authentication.husqvarnagroup.cloud/v1/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(
+  REDIRECT_URI
+)}&response_type=code&scope=AM.CLOUD`;
+
 });
 
 app.get("/callback", async (req, res) => {
