@@ -105,32 +105,57 @@ app.get("/callback", async (req, res) => {
 });
 
 app.get("/dashboard", async (req, res) => {
-  if (!req.session.access_token) return res.redirect("/");
+  if (!req.session.access_token) {
+    console.log("Missing access token in session.");
+    return res.redirect("/");
+  }
+
+  await refreshToken(req);
 
   try {
-    const mowerResponse = await axios.get(
-      "https://api.amc.husqvarnagroup.dev/v1/mowers",
-      {
-        headers: {
-          Authorization: `Bearer ${req.session.access_token}`,
-          "Authorization-Provider": "husqvarna",
-          "X-Api-Key": CLIENT_ID,
-        },
-      }
-    );
+    const mowerResponse = await axios.get("https://api.amc.husqvarnagroup.dev/v1/mowers", {
+      headers: {
+        Authorization: `Bearer ${req.session.access_token}`,
+        "Authorization-Provider": "husqvarna",
+        "X-Api-Key": CLIENT_ID,
+      },
+    });
 
-    const mower = mowerResponse.data[0];
+    console.log("Mower API response:", mowerResponse.data);
+
+    const mowers = mowerResponse.data;
+    if (!Array.isArray(mowers) || mowers.length === 0) {
+      return res.send("<p>No mowers linked to your account.</p>");
+    }
+
+    const mower = mowers[0];
+    req.session.mowerId = mower.id;
+
+    const mowerName = mower.attributes?.system?.name || "Unknown";
+    const mowerActivity = mower.attributes?.mower?.activity || "Unknown";
+    const batteryLevel = mower.attributes?.battery?.batteryPercent ?? "Unknown";
 
     res.send(`
-      <h2>Automower Dashboard</h2>
-      <p>Name: ${mower.attributes.system.name}</p>
-      <p>Status: ${mower.attributes.mower.activity}</p>
-      <p>Battery: ${mower.attributes.battery.batteryPercent}%</p>
+      <h2>Welcome to Automower Dashboard</h2>
+      <p><strong>Name:</strong> ${mowerName}</p>
+      <p><strong>Status:</strong> ${mowerActivity}</p>
+      <p><strong>Battery:</strong> ${batteryLevel}%</p>
+      <form method="POST" action="/start">
+        <button type="submit">Start Mowing (30 min)</button>
+      </form>
+      <form method="POST" action="/park">
+        <button type="submit">Park Mower</button>
+      </form>
     `);
   } catch (err) {
-    res.send(err.message);
+    console.error("Dashboard error:", err.response?.data || err.message);
+    res.send(`
+      <h3>Dashboard Error</h3>
+      <pre>${JSON.stringify(err.response?.data || err.message, null, 2)}</pre>
+    `);
   }
 });
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
