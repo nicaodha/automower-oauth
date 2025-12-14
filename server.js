@@ -5,86 +5,71 @@ const session = require("express-session");
 
 const app = express();
 
+// Environment variables
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const REDIRECT_URI = process.env.REDIRECT_URI;
 const PORT = process.env.PORT || 3000;
 
+// Basic Auth header for token exchange
 const basicAuth = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString("base64");
 
 // Middleware
-app.set("trust proxy", 1);
+app.set("trust proxy", 1); 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(
   session({
-    secret: "automower_secret",
+    secret: "automower_simple_secret",
     resave: false,
     saveUninitialized: true,
-    cookie: {
+    cookie: { 
       secure: process.env.NODE_ENV === "production",
-      maxAge: 1000 * 60 * 60 * 24 // 24 hours
-    },
+      maxAge: 1000 * 60 * 60 * 24 
+    }, 
   })
 );
 
-// Helper function to log detailed Axios errors (for console)
-function logAxiosError(context, err) {
-    const status = err.response?.status;
-    const data = err.response?.data;
-    const headers = err.response?.headers;
-    const config = err.config;
+// Helper function to fetch mower status
+async function fetchMowerStatus(accessToken) {
+    try {
+        const mowerResponse = await axios.get("https://api.amc.husqvarnagroup.dev/v1/mowers", {
+            headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "Authorization-Provider": "husqvarna",
+                "X-Api-Key": CLIENT_ID,
+            },
+        });
 
-    console.error(`\n--- ❌ ERROR: ${context} ---`);
-    console.error(`Request URL: ${config?.url}`);
-    console.error(`HTTP Status: ${status || 'N/A'}`);
-    console.error(`Message: ${err.message}`);
-    console.error(`Response Data: ${JSON.stringify(data, null, 2)}`);
-    console.error(`Response Headers: ${JSON.stringify(headers, null, 2)}`);
-    console.error('---------------------------\n');
-}
+        // Husqvarna uses JSON:API format: data is nested under .data.data
+        const mowers = mowerResponse.data.data;
+        if (!Array.isArray(mowers) || mowers.length === 0) {
+            return { error: "No mowers linked to your account." };
+        }
 
-// ========== HELPER FUNCTIONS ==========
+        const mower = mowers[0];
+        const name = mower.attributes?.system?.name || "Unknown Mower";
+        const activity = mower.attributes?.mower?.activity || "Unknown";
+        const battery = mower.attributes?.battery?.batteryPercent ?? "N/A";
 
-/**
- * Attempts to refresh the access token only when needed. 
- * Returns true if successful, false otherwise.
- */
-async function refreshAccessToken(req) {
-  if (!req.session.refresh_token) return false;
-
-  console.log("🔄 Attempting to refresh token...");
-  try {
-    const response = await axios.post(
-      "https://api.authentication.husqvarnagroup.dev/v1/oauth2/token",
-      new URLSearchParams({
-        grant_type: "refresh_token",
-        refresh_token: req.session.refresh_token,
-      }),
-      {
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Authorization: `Basic ${basicAuth}`,
-        },
-      }
-    );
-
-    req.session.access_token = response.data.access_token;
-    req.session.refresh_token = response.data.refresh_token; 
-    
-    // Explicitly save session to avoid race conditions
-    return new Promise((resolve) => {
-      req.session.save((err) => {
-        if (err) console.error("Session save error:", err);
-        resolve(true);
-      });
-    });
-
-  } catch (error) {
-    // Log the details of the refresh error (usually 400 Bad Request)
-    logAxiosError("TOKEN REFRESH FAILURE", error);
-    return false;
-  }
+        return { 
+            status: "SUCCESS", 
+            name, 
+            activity, 
+            battery 
+        };
+    } catch (err) {
+        // Log the error in the server console for debugging
+        console.error("Mower status fetch failed:", err.response?.data || err.message);
+        
+        // Return a readable error message for the front end
+        const status = err.response?.status;
+        const errorData = err.response?.data?.errors?.[0]?.title || err.message;
+        
+        return { 
+            error: `API Call Failed (${status || 'N/A'}): ${errorData}` 
+        };
+    }
 }
 
 // ========== ROUTES ==========
@@ -92,7 +77,7 @@ async function refreshAccessToken(req) {
 // Landing page
 app.get("/", (req, res) => {
   res.send(`
-    <h2>Automower Connect Dashboard</h2>
+    <h2>Automower Connect Status Check</h2>
     <a href="/login">Login with Automower Connect</a>
   `);
 });
@@ -105,14 +90,18 @@ app.get("/login", (req, res) => {
     `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
     `&response_type=code` +
     `&scope=AM.CLOUD`;
+
   res.redirect(authUrl);
 });
 
-// OAuth2 Callback
+// OAuth2 Callback - The Token Receiver
 app.get("/callback", async (req, res) => {
   const code = req.query.code;
-  if (!code) return res.send("No code received");
+  if (!code) return res.send("No code received. Authorization was likely denied.");
 
+  let accessToken;
+
+  // 1. Exchange Code for Tokens
   try {
     const response = await axios.post(
       "https://api.authentication.husqvarnagroup.dev/v1/oauth2/token",
@@ -129,138 +118,51 @@ app.get("/callback", async (req, res) => {
       }
     );
 
-    req.session.access_token = response.data.access_token;
-    req.session.refresh_token = response.data.refresh_token;
-
-    res.redirect("/dashboard");
-  } catch (err) {
-    // Log detailed error for callback
-    logAxiosError("CALLBACK TOKEN EXCHANGE FAILURE", err);
-    res.send(
-      `<h3>Callback Error</h3><pre>${JSON.stringify(err.response?.data || err.message, null, 2)}</pre>`
-    );
-  }
-});
-
-// Dashboard view
-app.get("/dashboard", async (req, res) => {
-  if (!req.session.access_token) return res.redirect("/");
-
-  try {
-    // 1. Attempt to fetch mowers using the current token
-    const mowerResponse = await axios.get("https://api.amc.husqvarnagroup.dev/v1/mowers", {
-      headers: {
-        Authorization: `Bearer ${req.session.access_token}`,
-        "Authorization-Provider": "husqvarna",
-        "X-Api-Key": CLIENT_ID,
-      },
-    });
-
-    // 2. Parse JSON:API response (.data.data)
-    const mowers = mowerResponse.data.data; 
+    accessToken = response.data.access_token;
+    const { refresh_token, expires_in, token_type } = response.data;
     
-    if (!Array.isArray(mowers) || mowers.length === 0) {
-      return res.send("<p>No mowers linked to your account.</p>");
+    // Store tokens in session (though we won't use them much here)
+    req.session.access_token = accessToken;
+    req.session.refresh_token = refresh_token;
+
+    // 2. Fetch Mower Status using the new Access Token
+    const mower = await fetchMowerStatus(accessToken);
+    let mowerStatusHtml;
+
+    if (mower.error) {
+        mowerStatusHtml = `<p style="color: red;">❌ **Mower Status Check Failed:** ${mower.error}</p>`;
+    } else {
+        mowerStatusHtml = `
+            <h3>✅ Mower Status (API Check Successful)</h3>
+            <p><strong>Mower Name:</strong> ${mower.name}</p>
+            <p><strong>Activity:</strong> ${mower.activity}</p>
+            <p><strong>Battery Level:</strong> ${mower.battery}%</p>
+        `;
     }
 
-    const mower = mowers[0];
-    req.session.mowerId = mower.id;
-
-    const mowerName = mower.attributes?.system?.name || "Unknown";
-    const mowerActivity = mower.attributes?.mower?.activity || "Unknown";
-    const batteryLevel = mower.attributes?.battery?.batteryPercent ?? "Unknown";
-
+    // 3. Render Confirmation Page
     res.send(`
-      <h2>Welcome to Automower Dashboard</h2>
-      <p><strong>Name:</strong> ${mowerName}</p>
-      <p><strong>Status:</strong> ${mowerActivity}</p>
-      <p><strong>Battery:</strong> ${batteryLevel}%</p>
-      <form method="POST" action="/start"><button type="submit">Start Mowing (30 min)</button></form>
-      <form method="POST" action="/park"><button type="submit">Park Mower</button></form>
+      <h2>✅ Success! Tokens Received</h2>
+      <p>This confirms your OAuth flow, client ID, client secret, and redirect URI are correct.</p>
+      
+      <p><strong>Token Status:</strong> Access Token received (expires in ${expires_in} seconds).</p>
+      
+      <hr/>
+      ${mowerStatusHtml}
+      <hr/>
+      <a href="/">Start Over</a>
     `);
 
   } catch (err) {
-    // 3. Handle 401 Unauthorized (Token Expired)
-    if (err.response && err.response.status === 401) {
-      console.log("⚠️ Token expired or invalid. Attempting refresh...");
-      const refreshed = await refreshAccessToken(req);
-      
-      if (refreshed) {
-        // Token refreshed successfully, retry the dashboard load
-        return res.redirect("/dashboard"); 
-      } else {
-        // Refresh failed (e.g., 400 Bad Request), force re-login
-        return res.redirect("/"); 
-      }
-    }
-
-    // 4. Log and Display ANY other dashboard error
-    logAxiosError("DASHBOARD MOWER FETCH FAILURE", err);
+    console.error("Token exchange error:", err.response?.data || err.message);
     res.send(`
-      <h2>Dashboard Error</h2>
-      <p>Could not fetch mower data. Check logs for details.</p>
+      <h3>❌ Token Exchange Error</h3>
+      <p>Could not get tokens. Check logs for details.</p>
       <pre>${JSON.stringify(err.response?.data || err.message, null, 2)}</pre>
     `);
   }
 });
 
-// Start mowing
-app.post("/start", async (req, res) => {
-  if (!req.session.access_token || !req.session.mowerId) return res.redirect("/");
-
-  try {
-    await axios.post(
-      `https://api.amc.husqvarnagroup.dev/v1/mowers/${req.session.mowerId}/actions`,
-      {
-        data: {
-          type: "Start",
-          attributes: { duration: 30 }
-        }
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${req.session.access_token}`,
-          "Authorization-Provider": "husqvarna",
-          "Content-Type": "application/vnd.api+json",
-          "X-Api-Key": CLIENT_ID,
-        },
-      }
-    );
-    res.redirect("/dashboard");
-  } catch (err) {
-    logAxiosError("START ACTION FAILURE", err);
-    res.send(`<p>Failed to start mower:</p><pre>${JSON.stringify(err.response?.data || err.message, null, 2)}</pre>`);
-  }
-});
-
-// Park mower
-app.post("/park", async (req, res) => {
-  if (!req.session.access_token || !req.session.mowerId) return res.redirect("/");
-  
-  try {
-    await axios.post(
-      `https://api.amc.husqvarnagroup.dev/v1/mowers/${req.session.mowerId}/actions`,
-      {
-        data: {
-          type: "Park",
-          attributes: {}
-        }
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${req.session.access_token}`,
-          "Authorization-Provider": "husqvarna",
-          "Content-Type": "application/vnd.api+json",
-          "X-Api-Key": CLIENT_ID,
-        },
-      }
-    );
-    res.redirect("/dashboard");
-  } catch (err) {
-    logAxiosError("PARK ACTION FAILURE", err);
-    res.send(`<p>Failed to park mower:</p><pre>${JSON.stringify(err.response?.data || err.message, null, 2)}</pre>`);
-  }
-});
 
 // Start server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
