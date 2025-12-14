@@ -149,13 +149,21 @@ app.get("/dashboard", async (req, res) => {
       </form>
     `);
   } catch (err) {
-    console.error("Dashboard error (full):", err); // <-- log full error
-    const data = err.response?.data || err.message || "Unknown error";
-    res.send(`
-      <h3>Dashboard Error</h3>
-      <pre>${JSON.stringify(data, null, 2)}</pre>
-    `);
-  }
+  console.error("Dashboard error (full object):", err);
+
+  const status = err.response?.status;
+  const headers = err.response?.headers;
+  const data = err.response?.data;
+  const message = err.message;
+
+  res.send(`
+    <h2>Dashboard Error</h2>
+    <p><strong>Status:</strong> ${status || "N/A"}</p>
+    <p><strong>Message:</strong> ${message}</p>
+    <pre><strong>Response Data:</strong>\n${JSON.stringify(data, null, 2)}</pre>
+    <pre><strong>Headers:</strong>\n${JSON.stringify(headers, null, 2)}</pre>
+  `);
+}
 
 
 // Start mowing
