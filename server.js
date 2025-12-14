@@ -37,7 +37,7 @@ async function fetchMowerStatus(accessToken) {
             headers: {
                 Authorization: `Bearer ${accessToken}`,
                 "Authorization-Provider": "husqvarna",
-                "X-Api-Key": CLIENT_ID,
+                "X-Api-Key": "2d66a913-2590-4fcb-8dc2-33b31905c473",
             },
         });
 
