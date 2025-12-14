@@ -35,18 +35,12 @@ async function fetchMowerStatus(accessToken) {
     try {
         const mowerResponse = await axios.get("https://api.amc.husqvarnagroup.dev/v1/mowers", {
             headers: {
-                // REQUIRED: Authorization Bearer token
                 Authorization: `Bearer ${accessToken}`, 
-                
-                // REQUIRED: Authorization type header
                 "Authorization-Provider": "husqvarna", 
-                
-                // CRITICAL FIX: The X-Api-Key header (your CLIENT_ID)
                 "X-Api-Key": CLIENT_ID, 
             },
         });
 
-        // Husqvarna uses JSON:API format: data is nested under .data.data
         const mowers = mowerResponse.data.data;
         if (!Array.isArray(mowers) || mowers.length === 0) {
             return { error: "No mowers linked to your account." };
@@ -64,10 +58,13 @@ async function fetchMowerStatus(accessToken) {
             battery 
         };
     } catch (err) {
-        // Log the error in the server console for debugging
-        console.error("Mower status fetch failed:", err.response?.data || err.message);
-        
-        // Return a readable error message for the front end
+        // --- CRITICAL LOGGING ADDED HERE ---
+        console.error("Mower status fetch failed details:");
+        console.error("Message:", err.message); // This will show the raw network error
+        console.error("Code:", err.code);       // This will show a network error code (e.g., ECONNREFUSED)
+        // ------------------------------------
+
+        // Fallback to display to the user
         const status = err.response?.status;
         const errorData = err.response?.data?.errors?.[0]?.title || err.message;
         
