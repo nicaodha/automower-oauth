@@ -21,13 +21,28 @@ app.use(
     secret: "automower_secret",
     resave: false,
     saveUninitialized: true,
-    // WARNING: MemoryStore is not for production. Use a service like Redis for scalability.
     cookie: {
       secure: process.env.NODE_ENV === "production",
       maxAge: 1000 * 60 * 60 * 24 // 24 hours
     },
   })
 );
+
+// Helper function to log detailed Axios errors (for console)
+function logAxiosError(context, err) {
+    const status = err.response?.status;
+    const data = err.response?.data;
+    const headers = err.response?.headers;
+    const config = err.config;
+
+    console.error(`\n--- ❌ ERROR: ${context} ---`);
+    console.error(`Request URL: ${config?.url}`);
+    console.error(`HTTP Status: ${status || 'N/A'}`);
+    console.error(`Message: ${err.message}`);
+    console.error(`Response Data: ${JSON.stringify(data, null, 2)}`);
+    console.error(`Response Headers: ${JSON.stringify(headers, null, 2)}`);
+    console.error('---------------------------\n');
+}
 
 // ========== HELPER FUNCTIONS ==========
 
@@ -55,7 +70,7 @@ async function refreshAccessToken(req) {
     );
 
     req.session.access_token = response.data.access_token;
-    req.session.refresh_token = response.data.refresh_token; // Important: The new refresh token
+    req.session.refresh_token = response.data.refresh_token; 
     
     // Explicitly save session to avoid race conditions
     return new Promise((resolve) => {
@@ -66,8 +81,8 @@ async function refreshAccessToken(req) {
     });
 
   } catch (error) {
-    // Log the details of the 400 error
-    console.error("❌ Refresh Failed:", error.response?.data || error.message);
+    // Log the details of the refresh error (usually 400 Bad Request)
+    logAxiosError("TOKEN REFRESH FAILURE", error);
     return false;
   }
 }
@@ -119,9 +134,10 @@ app.get("/callback", async (req, res) => {
 
     res.redirect("/dashboard");
   } catch (err) {
-    console.error("Token exchange error:", err.response?.data || err.message);
+    // Log detailed error for callback
+    logAxiosError("CALLBACK TOKEN EXCHANGE FAILURE", err);
     res.send(
-      `<h3>Token Exchange Error</h3><pre>${JSON.stringify(err.response?.data || err.message, null, 2)}</pre>`
+      `<h3>Callback Error</h3><pre>${JSON.stringify(err.response?.data || err.message, null, 2)}</pre>`
     );
   }
 });
@@ -178,10 +194,11 @@ app.get("/dashboard", async (req, res) => {
       }
     }
 
-    // Handle other errors (like network or 403 Forbidden)
-    console.error("Dashboard error:", err.response?.data || err.message);
+    // 4. Log and Display ANY other dashboard error
+    logAxiosError("DASHBOARD MOWER FETCH FAILURE", err);
     res.send(`
       <h2>Dashboard Error</h2>
+      <p>Could not fetch mower data. Check logs for details.</p>
       <pre>${JSON.stringify(err.response?.data || err.message, null, 2)}</pre>
     `);
   }
@@ -190,7 +207,6 @@ app.get("/dashboard", async (req, res) => {
 // Start mowing
 app.post("/start", async (req, res) => {
   if (!req.session.access_token || !req.session.mowerId) return res.redirect("/");
-  // We skip token refresh here; if it fails, the user will be forced to refresh/relogin on the next /dashboard load.
 
   try {
     await axios.post(
@@ -212,7 +228,7 @@ app.post("/start", async (req, res) => {
     );
     res.redirect("/dashboard");
   } catch (err) {
-    console.error("Start Action Failed:", err.response?.data || err.message);
+    logAxiosError("START ACTION FAILURE", err);
     res.send(`<p>Failed to start mower:</p><pre>${JSON.stringify(err.response?.data || err.message, null, 2)}</pre>`);
   }
 });
@@ -241,7 +257,7 @@ app.post("/park", async (req, res) => {
     );
     res.redirect("/dashboard");
   } catch (err) {
-    console.error("Park Action Failed:", err.response?.data || err.message);
+    logAxiosError("PARK ACTION FAILURE", err);
     res.send(`<p>Failed to park mower:</p><pre>${JSON.stringify(err.response?.data || err.message, null, 2)}</pre>`);
   }
 });
