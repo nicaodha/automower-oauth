@@ -5,14 +5,23 @@ const axios = require("axios");
 const session = require("express-session");
 const app = express();
 
+// Load environment variables
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const REDIRECT_URI = process.env.REDIRECT_URI;
 
+// Middleware setup
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(session({ secret: "automower_secret", resave: false, saveUninitialized: true }));
+app.use(
+  session({
+    secret: "automower_secret",
+    resave: false,
+    saveUninitialized: true,
+  })
+);
 
+// Home page
 app.get("/", (req, res) => {
   res.send(`
     <h2>Automower Connect Dashboard</h2>
@@ -20,9 +29,10 @@ app.get("/", (req, res) => {
   `);
 });
 
+// Login redirect to authorization URL
 app.get("/login", (req, res) => {
   const authUrl =
-    `https://api.authentication.husqvarnagroup.cloud/v1/oauth2/authorize` +
+    `https://api.authentication.husqvarnagroup.dev/v1/oauth2/authorize` +
     `?client_id=${CLIENT_ID}` +
     `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
     `&response_type=code` +
@@ -31,46 +41,48 @@ app.get("/login", (req, res) => {
   res.redirect(authUrl);
 });
 
+// Callback after user authorizes
 app.get("/callback", async (req, res) => {
   const code = req.query.code;
   if (!code) return res.send("No code received");
 
   try {
-   const response = await axios.post(
-  "https://api.authentication.husqvarnagroup.cloud/v1/oauth2/token",
-  null,
-  {
-    params: {
-      grant_type: "authorization_code",
-      code,
-      redirect_uri: REDIRECT_URI,
-      client_id: CLIENT_ID,
-      client_secret: CLIENT_SECRET,
-    },
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-  }
-);
+    const response = await axios.post(
+      "https://api.authentication.husqvarnagroup.dev/v1/oauth2/token",
+      null,
+      {
+        params: {
+          grant_type: "authorization_code",
+          code,
+          redirect_uri: REDIRECT_URI,
+          client_id: CLIENT_ID,
+          client_secret: CLIENT_SECRET,
+        },
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+      }
+    );
 
     req.session.access_token = response.data.access_token;
     req.session.refresh_token = response.data.refresh_token;
     res.redirect("/dashboard");
   } catch (err) {
-  const husqvarnaError = err.response?.data || err.message;
-  console.error("Token exchange error:", husqvarnaError);
-  res.send(`
-    <h3>Error fetching token</h3>
-    <pre>${JSON.stringify(husqvarnaError, null, 2)}</pre>
-  `);
-}
+    const husqvarnaError = err.response?.data || err.message;
+    console.error("Token exchange error:", husqvarnaError);
+    res.send(`
+      <h3>Error fetching token</h3>
+      <pre>${JSON.stringify(husqvarnaError, null, 2)}</pre>
+    `);
+  }
 });
 
+// Refresh token helper
 async function refreshToken(req) {
   if (!req.session.refresh_token) return;
   try {
     const response = await axios.post(
-      "https://api.authentication.husqvarnagroup.cloud/v1/oauth2/token",
+      "https://api.authentication.husqvarnagroup.dev/v1/oauth2/token",
       null,
       {
         params: {
@@ -91,6 +103,7 @@ async function refreshToken(req) {
   }
 }
 
+// Dashboard after login
 app.get("/dashboard", async (req, res) => {
   if (!req.session.access_token) return res.redirect("/");
 
@@ -125,6 +138,7 @@ app.get("/dashboard", async (req, res) => {
   }
 });
 
+// Start mower
 app.post("/start", async (req, res) => {
   if (!req.session.access_token || !req.session.mowerId) return res.redirect("/");
   await refreshToken(req);
@@ -146,6 +160,7 @@ app.post("/start", async (req, res) => {
   }
 });
 
+// Park mower
 app.post("/park", async (req, res) => {
   if (!req.session.access_token || !req.session.mowerId) return res.redirect("/");
   await refreshToken(req);
@@ -167,5 +182,6 @@ app.post("/park", async (req, res) => {
   }
 });
 
+// Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
