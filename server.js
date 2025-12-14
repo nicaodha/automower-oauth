@@ -35,9 +35,14 @@ async function fetchMowerStatus(accessToken) {
     try {
         const mowerResponse = await axios.get("https://api.amc.husqvarnagroup.dev/v1/mowers", {
             headers: {
-                Authorization: `Bearer ${accessToken}`,
-                "Authorization-Provider": "husqvarna",
-                "X-Api-Key": "2d66a913-2590-4fcb-8dc2-33b31905c473",
+                // REQUIRED: Authorization Bearer token
+                Authorization: `Bearer ${accessToken}`, 
+                
+                // REQUIRED: Authorization type header
+                "Authorization-Provider": "husqvarna", 
+                
+                // CRITICAL FIX: The X-Api-Key header (your CLIENT_ID)
+                "X-Api-Key": CLIENT_ID, 
             },
         });
 
@@ -119,13 +124,12 @@ app.get("/callback", async (req, res) => {
     );
 
     accessToken = response.data.access_token;
-    const { refresh_token, expires_in, token_type } = response.data;
+    const { refresh_token, expires_in } = response.data;
     
-    // Store tokens in session (though we won't use them much here)
     req.session.access_token = accessToken;
     req.session.refresh_token = refresh_token;
 
-    // 2. Fetch Mower Status using the new Access Token
+    // 2. Fetch Mower Status using the new Access Token (This call is now correctly configured)
     const mower = await fetchMowerStatus(accessToken);
     let mowerStatusHtml;
 
