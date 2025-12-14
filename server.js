@@ -116,6 +116,8 @@ app.get("/dashboard", async (req, res) => {
 
   try {
     console.log("Access token in session:", req.session.access_token);
+    console.log("Calling /mowers with token:", req.session.access_token);
+    console.log("Mower response:", mowerResponse.data);
     const mowerResponse = await axios.get("https://api.amc.husqvarnagroup.dev/v1/mowers", {
       headers: {
         Authorization: `Bearer ${req.session.access_token}`,
