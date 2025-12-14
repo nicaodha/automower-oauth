@@ -31,16 +31,46 @@ app.get("/", (req, res) => {
   `);
 });
 
-app.get("/login", (req, res) => {
-  const authUrl =
-    `https://api.authentication.husqvarnagroup.dev/v1/oauth2/authorize` +
-    `?client_id=${CLIENT_ID}` +
-    `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
-    `&response_type=code` +
-    `&scope=amc:read amc:write`;
+app.get("/dashboard", async (req, res) => {
+  if (!req.session.access_token) return res.redirect("/");
 
-  res.redirect(authUrl);
+  await refreshToken(req);
+
+  try {
+    const mowerResponse = await axios.get("https://api.amc.husqvarnagroup.dev/v1/mowers", {
+      headers: {
+        Authorization: `Bearer ${req.session.access_token}`,
+        "Authorization-Provider": "husqvarna",
+        "X-Api-Key": CLIENT_ID,
+      },
+    });
+
+    const mowers = mowerResponse.data;
+    if (!mowers.length) {
+      return res.send("<p>No mowers linked to your account.</p>");
+    }
+
+    const mower = mowers[0];
+    req.session.mowerId = mower.id;
+
+    res.send(`
+      <h2>Welcome to Automower Dashboard</h2>
+      <p><strong>Name:</strong> ${mower.attributes.system.name}</p>
+      <p><strong>Status:</strong> ${mower.attributes.mower.activity}</p>
+      <p><strong>Battery:</strong> ${mower.attributes.battery.batteryPercent}%</p>
+      <form method="POST" action="/start">
+        <button type="submit">Start Mowing (30 min)</button>
+      </form>
+      <form method="POST" action="/park">
+        <button type="submit">Park Mower</button>
+      </form>
+    `);
+  } catch (err) {
+    console.error("Dashboard error:", err.response?.data || err.message);
+    res.send(`<p>Error fetching mower data:</p><pre>${JSON.stringify(err.response?.data || err.message, null, 2)}</pre>`);
+  }
 });
+
 
 app.get("/callback", async (req, res) => {
   const code = req.query.code;
