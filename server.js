@@ -112,7 +112,7 @@ app.get("/dashboard", async (req, res) => {
     return res.redirect("/");
   }
 
-  await refreshToken(req);
+  //await refreshToken(req);
 
   try {
     console.log("Access token in session:", req.session.access_token);
