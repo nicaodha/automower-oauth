@@ -115,6 +115,7 @@ app.get("/dashboard", async (req, res) => {
   await refreshToken(req);
 
   try {
+    console.log("Access token in session:", req.session.access_token);
     const mowerResponse = await axios.get("https://api.amc.husqvarnagroup.dev/v1/mowers", {
       headers: {
         Authorization: `Bearer ${req.session.access_token}`,
@@ -148,13 +149,14 @@ app.get("/dashboard", async (req, res) => {
       </form>
     `);
   } catch (err) {
-    console.error("Dashboard error:", err.response?.data || err.message);
+    console.error("Dashboard error (full):", err); // <-- log full error
+    const data = err.response?.data || err.message || "Unknown error";
     res.send(`
       <h3>Dashboard Error</h3>
-      <pre>${JSON.stringify(err.response?.data || err.message, null, 2)}</pre>
+      <pre>${JSON.stringify(data, null, 2)}</pre>
     `);
   }
-});
+
 
 // Start mowing
 app.post("/start", async (req, res) => {
